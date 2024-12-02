@@ -15,6 +15,12 @@ const SwapInterface = () => {
   const [amount, setAmount] = useState("");
   const toast = useToast();
 
+  const handleFromTokenChange = (e) => {
+    const selected = e.target.value;
+    setFromToken(selected);
+    setToToken(selected === "tokenA" ? "tokenB" : "tokenA");
+  };
+
   const handleSwap = async () => {
     try {
       // Implement swap logic here
@@ -54,11 +60,10 @@ const SwapInterface = () => {
         <Select
           placeholder="Select token to swap from"
           value={fromToken}
-          onChange={(e) => setFromToken(e.target.value)}
+          onChange={handleFromTokenChange}
         >
-          <option value="ETH">ETH</option>
-          <option value="DAI">DAI</option>
-          <option value="USDC">USDC</option>
+          <option value="tokenA">Token A</option>
+          <option value="tokenB">Token B</option>
         </Select>
 
         <Input
@@ -71,11 +76,10 @@ const SwapInterface = () => {
         <Select
           placeholder="Select token to swap to"
           value={toToken}
-          onChange={(e) => setToToken(e.target.value)}
+          isDisabled={true}
         >
-          <option value="ETH">ETH</option>
-          <option value="DAI">DAI</option>
-          <option value="USDC">USDC</option>
+          <option value="tokenA">Token A</option>
+          <option value="tokenB">Token B</option>
         </Select>
 
         <Button

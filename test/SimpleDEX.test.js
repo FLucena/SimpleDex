@@ -1,8 +1,9 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 
 describe("SimpleDEX", function () {
-  let token1, token2, dex, owner, user1, user2;
+  let tokenA, tokenB, dex, owner, user1, user2;
   const INITIAL_SUPPLY = ethers.parseEther("1000000");
   const USER_TOKENS = ethers.parseEther("1000");
   const SWAP_AMOUNT = ethers.parseEther("100");
@@ -11,147 +12,166 @@ describe("SimpleDEX", function () {
     [owner, user1, user2] = await ethers.getSigners();
 
     // Deploy tokens
-    const Token1 = await ethers.getContractFactory("Token1");
-    token1 = await Token1.deploy();
-    await token1.waitForDeployment();
+    const TokenA = await ethers.getContractFactory("TokenA");
+    tokenA = await TokenA.deploy();
+    await tokenA.waitForDeployment();
 
-    const Token2 = await ethers.getContractFactory("Token2");
-    token2 = await Token2.deploy();
-    await token2.waitForDeployment();
+    const TokenB = await ethers.getContractFactory("TokenB");
+    tokenB = await TokenB.deploy();
+    await tokenB.waitForDeployment();
 
     // Deploy DEX
     const SimpleDEX = await ethers.getContractFactory("SimpleDEX");
-    dex = await SimpleDEX.deploy(await token1.getAddress(), await token2.getAddress());
+    dex = await SimpleDEX.deploy(await tokenA.getAddress(), await tokenB.getAddress());
     await dex.waitForDeployment();
 
-    // Mint tokens to DEX
-    await token1.mint(await dex.getAddress(), INITIAL_SUPPLY);
-    await token2.mint(await dex.getAddress(), INITIAL_SUPPLY);
+    // Mint tokens to owner for liquidity
+    await tokenA.mint(owner.address, INITIAL_SUPPLY);
+    await tokenB.mint(owner.address, INITIAL_SUPPLY);
+
+    // Add initial liquidity
+    await tokenA.connect(owner).approve(await dex.getAddress(), INITIAL_SUPPLY);
+    await tokenB.connect(owner).approve(await dex.getAddress(), INITIAL_SUPPLY);
+    await dex.connect(owner).addLiquidity(INITIAL_SUPPLY, INITIAL_SUPPLY);
 
     // Mint tokens to users
-    await token1.mint(user1.address, USER_TOKENS);
-    await token2.mint(user1.address, USER_TOKENS);
-    await token1.mint(user2.address, USER_TOKENS);
-    await token2.mint(user2.address, USER_TOKENS);
+    await tokenA.mint(user1.address, USER_TOKENS);
+    await tokenB.mint(user1.address, USER_TOKENS);
+    await tokenA.mint(user2.address, USER_TOKENS);
+    await tokenB.mint(user2.address, USER_TOKENS);
   });
 
   describe("Deployment", function () {
     it("Should set the correct token addresses", async function () {
-      expect(await dex.token1()).to.equal(await token1.getAddress());
-      expect(await dex.token2()).to.equal(await token2.getAddress());
+      expect(await dex.tokenA()).to.equal(await tokenA.getAddress());
+      expect(await dex.tokenB()).to.equal(await tokenB.getAddress());
     });
 
     it("Should have the correct initial balances", async function () {
-      expect(await token1.balanceOf(await dex.getAddress())).to.equal(INITIAL_SUPPLY);
-      expect(await token2.balanceOf(await dex.getAddress())).to.equal(INITIAL_SUPPLY);
+      const pool = await dex.pool();
+      expect(pool.tokenA).to.equal(INITIAL_SUPPLY);
+      expect(pool.tokenB).to.equal(INITIAL_SUPPLY);
+    });
+
+    it("Should set the correct owner", async function () {
+      expect(await dex.owner()).to.equal(owner.address);
     });
   });
 
   describe("Token Swaps", function () {
-    it("Should swap token1 for token2", async function () {
-      await token1.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
+    it("Should swap tokenA for tokenB", async function () {
+      await tokenA.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
       
-      const beforeToken1 = await token1.balanceOf(user1.address);
-      const beforeToken2 = await token2.balanceOf(user1.address);
+      const beforeTokenA = await tokenA.balanceOf(user1.address);
+      const beforeTokenB = await tokenB.balanceOf(user1.address);
 
-      await dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token2.getAddress(),
-        SWAP_AMOUNT
-      );
+      await dex.connect(user1).swapAforB(SWAP_AMOUNT);
 
-      expect(await token1.balanceOf(user1.address)).to.equal(beforeToken1 - SWAP_AMOUNT);
-      expect(await token2.balanceOf(user1.address)).to.equal(beforeToken2 + SWAP_AMOUNT);
+      const afterTokenA = await tokenA.balanceOf(user1.address);
+      const afterTokenB = await tokenB.balanceOf(user1.address);
+
+      expect(beforeTokenA - afterTokenA).to.equal(SWAP_AMOUNT);
+      expect(afterTokenB).to.be.gt(beforeTokenB);
     });
 
-    it("Should swap token2 for token1", async function () {
-      await token2.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
+    it("Should swap tokenB for tokenA", async function () {
+      await tokenB.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
       
-      const beforeToken1 = await token1.balanceOf(user1.address);
-      const beforeToken2 = await token2.balanceOf(user1.address);
+      const beforeTokenA = await tokenA.balanceOf(user1.address);
+      const beforeTokenB = await tokenB.balanceOf(user1.address);
 
-      await dex.connect(user1).swap(
-        await token2.getAddress(),
-        await token1.getAddress(),
-        SWAP_AMOUNT
-      );
+      await dex.connect(user1).swapBforA(SWAP_AMOUNT);
 
-      expect(await token2.balanceOf(user1.address)).to.equal(beforeToken2 - SWAP_AMOUNT);
-      expect(await token1.balanceOf(user1.address)).to.equal(beforeToken1 + SWAP_AMOUNT);
+      const afterTokenA = await tokenA.balanceOf(user1.address);
+      const afterTokenB = await tokenB.balanceOf(user1.address);
+
+      expect(beforeTokenB - afterTokenB).to.equal(SWAP_AMOUNT);
+      expect(afterTokenA).to.be.gt(beforeTokenA);
     });
 
     it("Should emit Swap event", async function () {
-      await token1.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
+      await tokenA.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
       
-      await expect(dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token2.getAddress(),
-        SWAP_AMOUNT
-      )).to.emit(dex, "Swap")
-        .withArgs(user1.address, await token1.getAddress(), await token2.getAddress(), SWAP_AMOUNT);
+      await expect(dex.connect(user1).swapAforB(SWAP_AMOUNT))
+        .to.emit(dex, "Swap")
+        .withArgs(
+          user1.address,    // user
+          SWAP_AMOUNT,      // amountIn
+          anyValue,         // amountOut (can be any value)
+          1n                // swapType (1 for A to B)
+        );
+    });
+  });
+
+  describe("Liquidity Management", function () {
+    const LIQUIDITY_AMOUNT = ethers.parseEther("1000");
+
+    beforeEach(async function () {
+      // Mint additional tokens to owner for liquidity tests
+      await tokenA.mint(owner.address, LIQUIDITY_AMOUNT);
+      await tokenB.mint(owner.address, LIQUIDITY_AMOUNT);
+    });
+
+    it("Should allow owner to add liquidity", async function () {
+      await tokenA.connect(owner).approve(await dex.getAddress(), LIQUIDITY_AMOUNT);
+      await tokenB.connect(owner).approve(await dex.getAddress(), LIQUIDITY_AMOUNT);
+
+      await expect(dex.connect(owner).addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT))
+        .to.emit(dex, "LiquidityAdded")
+        .withArgs(owner.address, LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT);
+    });
+
+    it("Should allow owner to remove liquidity", async function () {
+      const REMOVE_AMOUNT = ethers.parseEther("100");
+      
+      await expect(dex.connect(owner).removeLiquidity(REMOVE_AMOUNT, REMOVE_AMOUNT))
+        .to.emit(dex, "LiquidityRemoved")
+        .withArgs(owner.address, REMOVE_AMOUNT, REMOVE_AMOUNT);
+    });
+
+    it("Should not allow non-owner to add liquidity", async function () {
+      await expect(dex.connect(user1).addLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT))
+        .to.be.revertedWith("!own");
+    });
+
+    it("Should not allow non-owner to remove liquidity", async function () {
+      await expect(dex.connect(user1).removeLiquidity(LIQUIDITY_AMOUNT, LIQUIDITY_AMOUNT))
+        .to.be.revertedWith("!own");
+    });
+  });
+
+  describe("Price Oracle", function () {
+    it("Should return correct price for tokenA", async function () {
+      const price = await dex.getPrice(await tokenA.getAddress());
+      expect(price).to.equal(ethers.parseEther("1")); // Initial price should be 1:1
+    });
+
+    it("Should return correct price for tokenB", async function () {
+      const price = await dex.getPrice(await tokenB.getAddress());
+      expect(price).to.equal(ethers.parseEther("1")); // Initial price should be 1:1
+    });
+
+    it("Should revert for invalid token", async function () {
+      await expect(dex.getPrice(ethers.ZeroAddress)).to.be.revertedWith("!tkn");
     });
   });
 
   describe("Error cases", function () {
-    it("Should fail when swapping invalid tokens", async function () {
-      await expect(dex.connect(user1).swap(
-        ethers.ZeroAddress,
-        await token2.getAddress(),
-        SWAP_AMOUNT
-      )).to.be.revertedWith("Invalid from token");
+    it("Should fail when swapping with zero amount", async function () {
+      await expect(dex.connect(user1).swapAforB(0)).to.be.revertedWith("!amt");
+      await expect(dex.connect(user1).swapBforA(0)).to.be.revertedWith("!amt");
     });
 
-    it("Should fail when swapping the same token", async function () {
-      await expect(dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token1.getAddress(),
-        SWAP_AMOUNT
-      )).to.be.revertedWith("Cannot swap same token");
-    });
-
-    it("Should fail when trying to swap without approval", async function () {
-      await expect(dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token2.getAddress(),
-        SWAP_AMOUNT
-      )).to.be.reverted;
+    it("Should fail when swapping without approval", async function () {
+      await expect(dex.connect(user1).swapAforB(SWAP_AMOUNT)).to.be.revertedWith("!alw");
     });
 
     it("Should fail when trying to swap more than balance", async function () {
       const largeAmount = ethers.parseEther("2000");
-      await token1.connect(user1).approve(await dex.getAddress(), largeAmount);
+      await tokenA.connect(user1).approve(await dex.getAddress(), largeAmount);
       
-      await expect(dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token2.getAddress(),
-        largeAmount
-      )).to.be.reverted;
-    });
-  });
-
-  describe("Multiple users", function () {
-    it("Should handle multiple users swapping", async function () {
-      // User1 swaps token1 for token2
-      await token1.connect(user1).approve(await dex.getAddress(), SWAP_AMOUNT);
-      await dex.connect(user1).swap(
-        await token1.getAddress(),
-        await token2.getAddress(),
-        SWAP_AMOUNT
-      );
-
-      // User2 swaps token2 for token1
-      await token2.connect(user2).approve(await dex.getAddress(), SWAP_AMOUNT);
-      await dex.connect(user2).swap(
-        await token2.getAddress(),
-        await token1.getAddress(),
-        SWAP_AMOUNT
-      );
-
-      // Check final balances
-      expect(await token1.balanceOf(user1.address)).to.equal(USER_TOKENS - SWAP_AMOUNT);
-      expect(await token2.balanceOf(user1.address)).to.equal(USER_TOKENS + SWAP_AMOUNT);
-      expect(await token1.balanceOf(user2.address)).to.equal(USER_TOKENS + SWAP_AMOUNT);
-      expect(await token2.balanceOf(user2.address)).to.equal(USER_TOKENS - SWAP_AMOUNT);
+      await expect(dex.connect(user1).swapAforB(largeAmount))
+        .to.be.reverted;
     });
   });
 }); 
