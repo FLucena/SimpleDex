@@ -52,8 +52,9 @@ describe("SimpleDEX", function () {
       expect(await simpleDex.tokenB()).to.equal(await tokenB.getAddress());
     });
 
-    it("Should set the correct owner", async function () {
-      expect(await simpleDex.owner()).to.equal(owner.address);
+    it("Should set the right owner", async function () {
+      const contractOwner = await simpleDex.owner();
+      expect(contractOwner).to.equal(owner.address);
     });
   });
 
@@ -74,6 +75,17 @@ describe("SimpleDEX", function () {
       await expect(simpleDex.removeLiquidity(amount, amount))
         .to.emit(simpleDex, "LiquidityRemoved")
         .withArgs(amount, amount);
+    });
+
+    it("Owner should be able to add initial liquidity", async function () {
+      // Approve tokens first
+      await tokenA.approve(await simpleDex.getAddress(), INITIAL_LIQUIDITY);
+      await tokenB.approve(await simpleDex.getAddress(), INITIAL_LIQUIDITY);
+
+      // Add liquidity
+      await expect(simpleDex.addLiquidity(INITIAL_LIQUIDITY, INITIAL_LIQUIDITY))
+        .to.emit(simpleDex, "LiquidityAdded")
+        .withArgs(INITIAL_LIQUIDITY, INITIAL_LIQUIDITY);
     });
   });
 
