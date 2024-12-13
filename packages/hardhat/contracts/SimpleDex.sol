@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /// @title Simple Decentralized Exchange (DEX)
 /// @notice This contract facilitates token swaps and liquidity management
 /// @dev Uses constant product formula for swaps
-/// @author [Mario A. Parodi]
+/// @author [Francisco Lucena]
 contract SimpleDEX is Ownable {
     /// @notice Token A in the liquidity pool
     IERC20 public tokenA;
