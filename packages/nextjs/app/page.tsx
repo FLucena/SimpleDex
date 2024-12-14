@@ -1,72 +1,229 @@
 "use client";
 
-import Link from "next/link";
-import type { NextPage } from "next";
-import { useAccount } from "wagmi";
-import { BugAntIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { useState } from "react";
+import { formatEther } from "viem";
+import { ContractWriteMethods } from "~~/app/debug/_components/contract/ContractWriteMethods";
 import { Address } from "~~/components/scaffold-eth";
+import { useDeployedContractInfo } from "~~/hooks/scaffold-eth";
+import { useNetworkColor } from "~~/hooks/scaffold-eth";
+import { useScaffoldReadContract } from "~~/hooks/scaffold-eth/useScaffoldReadContract";
+import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
+import { Contract } from "~~/utils/scaffold-eth/contract";
 
-const Home: NextPage = () => {
-  const { address: connectedAddress } = useAccount();
+type SelectedToken = "A" | "B";
+
+// Custom component to filter and display specific contract functions
+const FilteredContractFunctions = ({
+  deployedContractData,
+  allowedFunctions,
+}: {
+  deployedContractData: Contract<"TokenA" | "TokenB" | "SimpleDEX">;
+  allowedFunctions: string[];
+}) => {
+  // Create a filtered version of the contract data
+  const filteredContractData = {
+    ...deployedContractData,
+    abi: deployedContractData.abi.filter(item => item.type === "function" && allowedFunctions.includes(item.name)),
+  } as unknown as Contract<"TokenA" | "TokenB" | "SimpleDEX">;
 
   return (
-    <>
-      <div className="flex items-center flex-col flex-grow pt-10">
-        <div className="px-5">
-          <h1 className="text-center">
-            <span className="block text-2xl mb-2">Welcome to</span>
-            <span className="block text-4xl font-bold">Scaffold-ETH 2</span>
-          </h1>
-          <div className="flex justify-center items-center space-x-2 flex-col sm:flex-row">
-            <p className="my-2 font-medium">Connected Address:</p>
-            <Address address={connectedAddress} />
+    <div className="bg-base-100 rounded-xl shadow-md shadow-secondary border border-base-300">
+      <div className="p-3 divide-y divide-base-300">
+        <ContractWriteMethods
+          deployedContractData={filteredContractData}
+          onChange={() => {
+            // Refresh data after contract write
+            // This empty implementation is intentional as the component handles updates internally
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default function Home() {
+  const { targetNetwork } = useTargetNetwork();
+  const networkColor = useNetworkColor();
+  const [selectedToken, setSelectedToken] = useState<SelectedToken>("A");
+  const [selectedContract, setSelectedContract] = useState<"SimpleDEX" | "TokenA" | "TokenB">("SimpleDEX");
+
+  // Get contract info
+  const { data: deployedContractData, isLoading: isLoadingContract } = useDeployedContractInfo("SimpleDEX");
+  const { data: tokenAContractData } = useDeployedContractInfo("TokenA");
+  const { data: tokenBContractData } = useDeployedContractInfo("TokenB");
+
+  // Read token addresses
+  const { data: tokenAAddress } = useScaffoldReadContract({
+    contractName: "SimpleDEX",
+    functionName: "tokenA",
+  });
+
+  const { data: tokenBAddress } = useScaffoldReadContract({
+    contractName: "SimpleDEX",
+    functionName: "tokenB",
+  });
+
+  // Read price based on selected token
+  const { data: price } = useScaffoldReadContract({
+    contractName: "SimpleDEX",
+    functionName: "getPrice",
+    args: [selectedToken === "A" ? tokenAAddress : tokenBAddress],
+  });
+
+  const formatPrice = (priceInWei: bigint | undefined) => {
+    if (!priceInWei) return "Loading...";
+    const formattedPrice = Number(formatEther(priceInWei)).toFixed(4);
+    return `${formattedPrice} ${selectedToken === "A" ? "TokenB/TokenA" : "TokenA/TokenB"}`;
+  };
+
+  const tokenFunctions = ["mint", "approve"];
+  const dexFunctions = ["addLiquidity", "removeLiquidity", "swapAforB", "swapBforA"];
+
+  if (isLoadingContract) return <div>Loading contracts...</div>;
+  if (!deployedContractData || !tokenAContractData || !tokenBContractData) {
+    return (
+      <div className="text-center">
+        <p>Contract not found! Please make sure:</p>
+        <ul className="list-disc">
+          <li>You&apos;re connected to the correct network ({targetNetwork.name})</li>
+          <li>The contracts are deployed (run `yarn deploy`)</li>
+          <li>The connected wallet has the correct permissions</li>
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen bg-[#0F172A]">
+      {/* Fixed Left Sidebar */}
+      <div className="w-[320px] fixed left-0 top-[67px] bottom-0 p-4 overflow-y-auto bg-[#0F172A]">
+        <div className="flex flex-col gap-4">
+          {/* Contract Addresses Header */}
+          <div className="bg-[#1E293B] p-3 rounded-lg shadow-md border border-[#334155]">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[#94A3B8]">SimpleDEX:</span>
+                <Address address={deployedContractData.address} size="xs" />
+              </div>
+              <div className="h-px bg-[#334155]" />
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[#94A3B8]">Token A:</span>
+                <Address address={tokenAAddress as string} size="xs" />
+              </div>
+              <div className="h-px bg-[#334155]" />
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-[#94A3B8]">Token B:</span>
+                <Address address={tokenBAddress as string} size="xs" />
+              </div>
+              <div className="h-px bg-[#334155]" />
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#94A3B8]">Network:</span>
+                <span className="text-xs" style={{ color: networkColor }}>
+                  {targetNetwork.name}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <p className="text-center text-lg">
-            Get started by editing{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              packages/nextjs/app/page.tsx
-            </code>
-          </p>
-          <p className="text-center text-lg">
-            Edit your smart contract{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              YourContract.sol
-            </code>{" "}
-            in{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              packages/hardhat/contracts
-            </code>
-          </p>
-        </div>
-
-        <div className="flex-grow bg-base-300 w-full mt-16 px-8 py-12">
-          <div className="flex justify-center items-center gap-12 flex-col sm:flex-row">
-            <div className="flex flex-col bg-base-100 px-10 py-10 text-center items-center max-w-xs rounded-3xl">
-              <BugAntIcon className="h-8 w-8 fill-secondary" />
-              <p>
-                Tinker with your smart contract using the{" "}
-                <Link href="/debug" passHref className="link">
-                  Debug Contracts
-                </Link>{" "}
-                tab.
-              </p>
+          {/* Price Display Section */}
+          <div className="bg-[#1E293B] p-4 rounded-xl border border-[#334155]">
+            <h2 className="text-lg font-bold mb-3 text-[#E2E8F0]">Current Price</h2>
+            <div className="join mb-3 w-full">
+              <button
+                className={`btn btn-sm join-item flex-1 ${
+                  selectedToken === "A"
+                    ? "bg-[#3B82F6] hover:bg-[#2563EB] text-white border-[#3B82F6]"
+                    : "bg-[#334155] hover:bg-[#475569] text-[#94A3B8] border-[#334155]"
+                }`}
+                onClick={() => setSelectedToken("A")}
+              >
+                Token A
+              </button>
+              <button
+                className={`btn btn-sm join-item flex-1 ${
+                  selectedToken === "B"
+                    ? "bg-[#3B82F6] hover:bg-[#2563EB] text-white border-[#3B82F6]"
+                    : "bg-[#334155] hover:bg-[#475569] text-[#94A3B8] border-[#334155]"
+                }`}
+                onClick={() => setSelectedToken("B")}
+              >
+                Token B
+              </button>
             </div>
-            <div className="flex flex-col bg-base-100 px-10 py-10 text-center items-center max-w-xs rounded-3xl">
-              <MagnifyingGlassIcon className="h-8 w-8 fill-secondary" />
-              <p>
-                Explore your local transactions with the{" "}
-                <Link href="/blockexplorer" passHref className="link">
-                  Block Explorer
-                </Link>{" "}
-                tab.
-              </p>
+            <div className="px-4 py-3 rounded-xl bg-[#334155] border border-[#475569]">
+              <p className="text-base font-bold text-[#E2E8F0]">{formatPrice(price)}</p>
             </div>
           </div>
         </div>
       </div>
-    </>
-  );
-};
 
-export default Home;
+      {/* Main Content */}
+      <div className="flex-1 ml-[320px] p-4 mt-[67px]">
+        <div className="max-w-[800px] mx-auto">
+          <div className="flex flex-col gap-4">
+            {/* Contract Selection Buttons */}
+            <div className="bg-[#1E293B] p-4 rounded-xl border border-[#334155]">
+              <div className="flex gap-2">
+                <button
+                  className={`btn btn-sm flex-1 ${
+                    selectedContract === "SimpleDEX"
+                      ? "bg-[#3B82F6] hover:bg-[#2563EB] text-white border-[#3B82F6]"
+                      : "bg-[#334155] hover:bg-[#475569] text-[#94A3B8] border-[#334155]"
+                  }`}
+                  onClick={() => setSelectedContract("SimpleDEX")}
+                >
+                  SimpleDEX
+                </button>
+                <button
+                  className={`btn btn-sm flex-1 ${
+                    selectedContract === "TokenA"
+                      ? "bg-[#3B82F6] hover:bg-[#2563EB] text-white border-[#3B82F6]"
+                      : "bg-[#334155] hover:bg-[#475569] text-[#94A3B8] border-[#334155]"
+                  }`}
+                  onClick={() => setSelectedContract("TokenA")}
+                >
+                  Token A
+                </button>
+                <button
+                  className={`btn btn-sm flex-1 ${
+                    selectedContract === "TokenB"
+                      ? "bg-[#3B82F6] hover:bg-[#2563EB] text-white border-[#3B82F6]"
+                      : "bg-[#334155] hover:bg-[#475569] text-[#94A3B8] border-[#334155]"
+                  }`}
+                  onClick={() => setSelectedContract("TokenB")}
+                >
+                  Token B
+                </button>
+              </div>
+            </div>
+
+            {/* Contract Functions */}
+            <div className="bg-[#1E293B] p-4 rounded-xl border border-[#334155]">
+              <h2 className="text-lg font-bold mb-3 text-[#E2E8F0]">
+                {selectedContract === "SimpleDEX" ? "DEX Functions" : `${selectedContract} Functions`}
+              </h2>
+              {selectedContract === "SimpleDEX" && (
+                <FilteredContractFunctions
+                  deployedContractData={deployedContractData}
+                  allowedFunctions={dexFunctions}
+                />
+              )}
+              {selectedContract === "TokenA" && (
+                <FilteredContractFunctions
+                  deployedContractData={tokenAContractData}
+                  allowedFunctions={tokenFunctions}
+                />
+              )}
+              {selectedContract === "TokenB" && (
+                <FilteredContractFunctions
+                  deployedContractData={tokenBContractData}
+                  allowedFunctions={tokenFunctions}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
